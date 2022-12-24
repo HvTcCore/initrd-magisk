@@ -121,7 +121,7 @@ magisk_loader(){
     # always use "/dev/<random_string>" as magisk tmpfs
     MAGISKTMP="/dev/$dev_random"
     echo -e "\nMAGISKTMP=/dev/$dev_random" >>/bin/utils.sh
-    for item in post-fs-data.sh service.sh magisk.rc overlay.sh magisksu_survival.sh; do
+    for item in post-fs-data.sh service.sh magisk.rc overlay.sh; do
          sed -i "s|\${{MAGISKTMP}}|$MAGISKTMP|g" /magisk/$item
     done
     sed -i "s|\${{POSTFSDATA}}|$magisk_postfsdata|g" /magisk/magisk.rc
@@ -270,9 +270,6 @@ on property:sys.boot_completed=1
 
     # start magisk boot_completed event
     start \${{BOOTCOMPLETED}}
-
-    # custom script
-    exec_background u:r:magisk:s0 root root -- \${{MAGISKTMP}}/busybox sh -o standalone \${{MAGISKTMP}}/emu/magisksu_survival.sh
 
 service \${{BOOTCOMPLETED}} \${{MAGISKTMP}}/magisk --boot-complete
     user root
@@ -450,8 +447,6 @@ mkdir \$MAGISKTMP/.magisk/block
 cat MAGISK_FILES_BASE/config >\$MAGISKTMP/.magisk/config
 restorecon -R /data/adb/magisk
 
-cat MAGISK_FILES_BASE/magisksu_survival.sh >\$MAGISKTMP/emu/magisksu_survival.sh
-
 OSROOT="\$(cat MAGISK_FILES_BASE/osroot_dev)"
 if [ ! -z "\$OSROOT" ]; then
     BLOCKNAME="\${OSROOT##*/}"
@@ -530,41 +525,6 @@ for item in \`ls \$OVERLAYDIR\`; do
             ;;
     esac
 done
-
-EOF
-
-cat <<EOF >/magisk/magisksu_survival.sh
-
-MAGISKTMP=\${{MAGISKTMP}}
-export PATH="\$MAGISKTMP:\$PATH"
-
-# prevent /system/bin/su from removing
-
-if mount | grep -q " /system/bin " && [ -f "/system/bin/magisk" ]; then
-    [ -L /system/bin/su ] || umount -l /system/bin/su
-    rm -rf /system/bin/su
-    ln -fs ./magisk /system/bin/su
-    mount -o ro,remount /system/bin
-fi
-
-# mount all drives
-( for blkdisk in /dev/block/[hmnsvx][dmrv][0-9a-z]*; do
-        if [ -b "\$blkdisk" ]; then
-            BLOCKNAME="\${blkdisk##*/}"
-            CHECKBLOCK="\$(mountpoint -x "/dev/block/\$BLOCKNAME")"
-            blk_major="\${CHECKBLOCK%:*}"
-            blk_minor="\${CHECKBLOCK: \${#blk_major}+1}"
-            mknod -m 666 "\$MAGISKTMP/.magisk/block/\$BLOCKNAME" b "\$blk_major" "\$blk_minor"
-            mkdir -p "\$MAGISKTMP/.magisk/mirror/\$BLOCKNAME"
-            mount.fuse "\$MAGISKTMP/.magisk/block/\$BLOCKNAME" "\$MAGISKTMP/.magisk/mirror/\$BLOCKNAME"
-            mountpoint -q "\$MAGISKTMP/.magisk/mirror/\$BLOCKNAME" || mount "\$MAGISKTMP/.magisk/block/\$BLOCKNAME" "\$MAGISKTMP/.magisk/mirror/\$BLOCKNAME"
-            mountpoint -q "\$MAGISKTMP/.magisk/mirror/\$BLOCKNAME" || mount -o ro "\$MAGISKTMP/.magisk/block/\$BLOCKNAME" "\$MAGISKTMP/.magisk/mirror/\$BLOCKNAME"
-            mount -o ro,remount "\$MAGISKTMP/.magisk/mirror/\$BLOCKNAME"
-        fi
-done
-# remove empty directory
-rmdir \$MAGISKTMP/.magisk/mirror/* 
-) &
 
 EOF
 
